@@ -183,3 +183,47 @@ int EPD_7in3f_test(void)
     return 0;
 }
 
+int EPD_7in3f_display_low_battery(void)
+{
+    printf("e-Paper Init and Clear...\r\n");
+    EPD_7IN3F_Init();
+
+    //Create a new image cache
+    UBYTE *BlackImage;
+    UDOUBLE Imagesize = ((EPD_7IN3F_WIDTH % 2 == 0)? (EPD_7IN3F_WIDTH / 2 ): (EPD_7IN3F_WIDTH / 2 + 1)) * EPD_7IN3F_HEIGHT;
+    if((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL) {
+        printf("Failed to apply for black memory...\r\n");
+        return -1;
+    }
+    printf("Paint_NewImage\r\n");
+    Paint_NewImage(BlackImage, EPD_7IN3F_WIDTH, EPD_7IN3F_HEIGHT, 0, EPD_7IN3F_WHITE);
+    Paint_SetScale(6);
+
+    printf("Display Low Battery Message\r\n");
+    Paint_SelectImage(BlackImage);
+    Paint_Clear(EPD_7IN3F_WHITE);
+    
+    // Display a battery icon (simple rectangle with + terminal)
+    Paint_SetRotate(270);
+    
+    // Draw battery outline
+    Paint_DrawRectangle(200, 150, 600, 350, EPD_7IN3F_BLACK, DOT_PIXEL_3X3, DRAW_FILL_EMPTY);
+    Paint_DrawRectangle(600, 220, 650, 280, EPD_7IN3F_BLACK, DOT_PIXEL_3X3, DRAW_FILL_FULL);
+    
+    // Draw battery level (low)
+    Paint_DrawRectangle(220, 170, 280, 330, EPD_7IN3F_RED, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    
+    // Draw warning message
+    Paint_DrawString_EN(120, 400, "Please Charge the Battery", &Font24, EPD_7IN3F_RED, EPD_7IN3F_WHITE);
+
+    printf("EPD_Display\r\n");
+    EPD_7IN3F_Display(BlackImage);
+
+    printf("Goto Sleep...\r\n\r\n");
+    EPD_7IN3F_Sleep();
+    free(BlackImage);
+    BlackImage = NULL;
+
+    return 0;
+}
+

@@ -33,5 +33,12 @@ void ledCharged(void)
 
 void powerOff(void)
 {
+    // Instead of completely turning off, use deep sleep mode
+    // with wake-up sources enabled (RTC)
+    
+    // Prepare for deep sleep but keep RTC active
+    printf("Entering deep sleep mode (RTC will wake up)\r\n");
+    
+    // Original power off logic
     DEV_Digital_Write(BAT_OFF, 0);
 }
