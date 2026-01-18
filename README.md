@@ -2,7 +2,7 @@
 
 **PhotoPainter-ACeP-Enhanced** is a firmware for the Waveshare PhotoPainter (ACeP RP2040 version) e-paper photo frame. This enhanced version *enables automatic slideshow functionality with various operation modes, supporting custom image selection methods.*
 
-The project is an adaptation of [@myevit](github.com/myevit/)/[PhotoPainter_B](github.com/myevit/PhotoPainter_B), the (B) version which uses a Spectra6 display, to the ACeP version of the PhotoPainter.
+The project is an adaptation of [@myevit](https://github.com/myevit/)/[PhotoPainter_B](https://github.com/myevit/PhotoPainter_B), the (B) version which uses a Spectra6 display, to the ACeP version of the PhotoPainter.
 
 ## Settings File Format
 
