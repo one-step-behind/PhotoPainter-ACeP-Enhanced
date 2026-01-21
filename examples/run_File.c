@@ -524,6 +524,7 @@ void updatePathIndex(void)
         settings.mode = 3;
         settings.timeInterval = 12 * 60;
         settings.currentIndex = 1;
+        settings.refreshCycles = 0;
     }
 
     printf("Active mode from settings: %d\r\n", settings.mode);
@@ -558,14 +559,17 @@ void updatePathIndex(void)
         }
     }
 
+    settings.refreshCycles++;
+    printf("Incrementing refresh cycles to: %d\r\n", settings.refreshCycles);
+
     // Save all settings
     saveSettings(&settings);
 
     // Make sure to unmount when done
     run_unmount();
 
-    printf("Updated index to %d (Mode: %d)\r\n",
-           settings.currentIndex, settings.mode);
+    printf("Updated index to: %d in Mode: %d with %d. refresh cycle\r\n",
+           settings.currentIndex, settings.mode, settings.refreshCycles);
 }
 
 /*
@@ -680,12 +684,10 @@ char isFileExist(const char *path)
     return 1;
 }
 
-
 // Compare function for qsort
 int compare_strings(const char *a, const char *b) {
     return strcmp(a, b);
 }
-
 
 /* 
     function: 
@@ -728,7 +730,6 @@ void custom_qsort(char arr[fileNumber][fileLen], int left, int right) {
     custom_qsort(arr, i, right);
 }
 
-
 /* 
     function: 
         Array copy and sort
@@ -755,7 +756,6 @@ void file_copy2(char temp[fileNumber][fileLen], char templist[fileNumber/2][file
 {
     memcpy(templist, temp[fileNumber/2], fileNumber/2*fileLen);
 }
-
 
 /* 
     function: 
@@ -828,7 +828,6 @@ char file_temporary_gets(char temp[][fileLen], const char *path)
     return i;
 }
 
-
 /* 
     function: 
         Write count string of data to temporary file
@@ -864,8 +863,6 @@ void file_puts(char temp[][fileLen], char count, FIL* fil)
     for(char i=0; i<count; i++)
         f_puts(temp[i], fil);
 }
-
-
 
 /* 
     function: 
@@ -1061,6 +1058,7 @@ void createDefaultSettings(void)
     int default_mode = 3;
     int default_time = 12 * 60;
     int default_index = 1;
+    int default_refresh_cycles = 0;
 
     fr = f_open(&fil, "settings.txt", FA_CREATE_ALWAYS | FA_WRITE);
     if (FR_OK != fr)
@@ -1073,11 +1071,12 @@ void createDefaultSettings(void)
     f_printf(&fil, "Mode=%d\r\n", default_mode);
     f_printf(&fil, "TimeInterval=%d\r\n", default_time);
     f_printf(&fil, "CurrentIndex=%d\r\n", default_index);
+    f_printf(&fil, "RefreshCycles=%d\r\n", default_refresh_cycles);
 
     f_sync(&fil); // Make sure it's written to disk
     f_close(&fil);
-    printf("Created default settings file with Mode=%d, TimeInterval=%d, CurrentIndex=%d\r\n",
-           default_mode, default_time, default_index);
+    printf("Created default settings file with Mode=%d, TimeInterval=%d, CurrentIndex=%d, RefreshCycles=%d\r\n",
+           default_mode, default_time, default_index, default_refresh_cycles);
 
     // Don't unmount here - caller should handle unmounting
 }
@@ -1097,6 +1096,7 @@ char loadSettings(Settings_t *settings)
     settings->mode = 3;
     settings->timeInterval = 12 * 60;
     settings->currentIndex = 1;
+    settings->refreshCycles = 0;
 
     // Don't mount here - caller should handle mounting
     FRESULT fr;
@@ -1171,12 +1171,21 @@ char loadSettings(Settings_t *settings)
                     printf("Invalid CurrentIndex value: %d (using default %d)\r\n", value, settings->currentIndex);
                 }
             }
+            else if (strcmp(key, "RefreshCycles") == 0)
+            {
+                settings->refreshCycles = value;
+
+                if (value > 1000000) // generally rated for about 1 million full refresh cycles under normal use conditions before significant degradation may occur
+                {
+                    printf("RefreshCycles exceeds Refresh lifetime: %d\r\n", value);
+                }
+            }
         }
     }
 
     f_close(&fil);
-    printf("Loaded settings: Mode=%d, TimeInterval=%d, CurrentIndex=%d\r\n",
-           settings->mode, settings->timeInterval, settings->currentIndex);
+    printf("Loaded settings: Mode=%d, TimeInterval=%d, CurrentIndex=%d, RefreshCycles=%d\r\n",
+           settings->mode, settings->timeInterval, settings->currentIndex, settings->refreshCycles);
 
     return 0;
 }
@@ -1199,6 +1208,7 @@ void saveSettings(Settings_t *settings)
     int mode = (settings->mode >= 0 && settings->mode <= 3) ? settings->mode : 3;
     int time_interval = (settings->timeInterval > 0 && settings->timeInterval < 24 * 60 * 30) ? settings->timeInterval : 12 * 60;
     int current_index = (settings->currentIndex > 0) ? settings->currentIndex : 1;
+    int refresh_cycles = (settings->refreshCycles > 0) ? settings->refreshCycles : 0;
 
     fr = f_open(&fil, "settings.txt", FA_CREATE_ALWAYS | FA_WRITE);
     if (FR_OK != fr)
@@ -1211,11 +1221,12 @@ void saveSettings(Settings_t *settings)
     f_printf(&fil, "Mode=%d\r\n", mode);
     f_printf(&fil, "TimeInterval=%d\r\n", time_interval);
     f_printf(&fil, "CurrentIndex=%d\r\n", current_index);
+    f_printf(&fil, "RefreshCycles=%d\r\n", refresh_cycles);
 
     // Ensure data is written to disk
     f_sync(&fil);
     f_close(&fil);
 
-    printf("Saved settings: Mode=%d, TimeInterval=%d, CurrentIndex=%d\r\n",
-           mode, time_interval, current_index);
+    printf("Saved settings: Mode=%d, TimeInterval=%d, CurrentIndex=%d, RefreshCycles=%d\r\n",
+           mode, time_interval, current_index, refresh_cycles);
 }

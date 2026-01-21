@@ -13,6 +13,7 @@ typedef struct
     int mode;         // Display mode (0-3)
     int timeInterval; // Time interval in minutes
     int currentIndex; // Current image index
+    int refreshCycles; // Refresh cycles the display had
 } Settings_t;
 
 char sdTest(void);

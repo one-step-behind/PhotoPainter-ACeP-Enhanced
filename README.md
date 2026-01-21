@@ -10,7 +10,10 @@ The project is an adaptation of [@myevit](https://github.com/myevit/)/[PhotoPain
 Mode=3
 TimeInterval=720
 CurrentIndex=1
+RefreshCycles=0
 ```
+
+**RefreshCycles** stores the refresh cycles of the display. It has informational character only. Do not change unless you need to, e.g. initially set a value after tinkering with the device.
 
 For **additional information** about Features, Operation modes, Settings please refer to the original [Readme.md](https://github.com/myevit/PhotoPainter_B/blob/master/README.md) of the above Project.
 
@@ -25,7 +28,7 @@ The programming method is shown below:
 1. connect the device to a USB port
 2. Press RUN, then press BOOT, then release RUN, then release BOOT
 
-A USB flash drive will pop up on the computer and you can drag the provided [Mode 3 UF2](https://github.com/one-step-behind/PhotoPainter-ACeP-Enhanced/tree/master/extra_uf2/Mode%203) file into it. The device reboots automatically. Press the NEXT button.
+A USB flash drive will pop up on the computer and you can drag the pre-compiled [ACeP Enhanced UF2](https://github.com/one-step-behind/PhotoPainter-ACeP-Enhanced/tree/master/extra_uf2/Mode%203) file into it. The device reboots automatically. Then Press NEXT button.
 
 ## License
 
