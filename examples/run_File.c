@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h> // malloc() free()
 #include <string.h>
-#include <stdlib.h>                   // for rand() and srand()
+#include <stdint.h>  // for uint32_t and size_t
 #include <time.h>                     // for time()
 #include "hardware/regs/rosc.h"       // For RP2040 hardware RNG
 #include "hardware/regs/addressmap.h" // For RP2040 hardware RNG
@@ -531,18 +531,11 @@ void updatePathIndex(void)
 
     if (settings.mode == 3)
     {
-        // For Mode 3, get a new random index
-        int new_index = getRandomImageIndex();
-        printf("Generated random index: %d (old index was: %d)\r\n",
+        // For Mode 3, get next index from affine permutation
+        // Guaranteed no repeats within cycle, no retry needed
+        int new_index = getNextImageIndex();
+        printf("Generated permuted index: %d (old index was: %d)\r\n",
                new_index, settings.currentIndex);
-
-        // Ensure we don't get the same index twice in a row if possible
-        if (new_index == settings.currentIndex && scanFileNum > 1)
-        {
-            printf("Same index generated, trying again...\r\n");
-            new_index = getRandomImageIndex();
-            printf("New random index: %d\r\n", new_index);
-        }
 
         settings.currentIndex = new_index;
     }
@@ -612,30 +605,66 @@ void setFilePath(void)
 
 /* 
     function: 
-        Get random image index for Mode 3
+        Compute CRC32 of a file (simple implementation)
     parameter: 
-        none
+        path: File path
     return:
-        Random image index
+        CRC32 checksum
 */
-int getRandomImageIndex(void)
+unsigned long crc32_file(const char *path)
 {
-    int index = 1;
+    unsigned long crc = 0xFFFFFFFF;
+    FIL fil;
+    FRESULT fr;
+    unsigned char buf[256];
+    unsigned int bytesRead;
 
-    if (scanFileNum <= 1)
+    fr = f_open(&fil, path, FA_READ);
+    if (FR_OK != fr)
     {
-        return index; // If there's only one file or none, return initial value 1
+        printf("crc32_file: failed to open %s\r\n", path);
+        return 0;
     }
 
-    // Use RP2040 hardware to generate better random numbers
-    // Get true random seed from RP2040 ring oscillator
-    uint32_t random_seed = 0;
+    while (f_read(&fil, buf, sizeof(buf), &bytesRead) == FR_OK && bytesRead > 0)
+    {
+        for (unsigned int i = 0; i < bytesRead; i++)
+        {
+            unsigned char byte = buf[i];
+            crc ^= byte;
+            for (int j = 0; j < 8; j++)
+            {
+                if (crc & 1)
+                    crc = (crc >> 1) ^ 0xEDB88320UL;
+                else
+                    crc = crc >> 1;
+            }
+        }
+    }
 
-    // Use free-running oscillator for randomness
+    f_close(&fil);
+    return crc ^ 0xFFFFFFFF;
+}
+
+/* 
+    function: 
+        Find a coprime of N (a number coprime with N for use in affine permutation)
+    parameter: 
+        N: The modulus
+    return:
+        A value coprime with N
+*/
+unsigned int findCoprime(unsigned int N)
+{
+    if (N <= 1)
+        return 1;
+
+    // Use RP2040 hardware to generate initial candidate
+    unsigned long random_seed = 0;
     volatile uint32_t *rnd_reg = (uint32_t *)(ROSC_BASE + ROSC_RANDOMBIT_OFFSET);
 
-    // Mix in some hardware noise
-    for (int i = 0; i < 32; i++)
+    // Get 16 random bits
+    for (int i = 0; i < 16; i++)
     {
         // Wait a bit
         for (int j = 0; j < 30; j++)
@@ -646,13 +675,295 @@ int getRandomImageIndex(void)
         random_seed = (random_seed << 1) | (*rnd_reg & 1);
     }
 
-    srand(random_seed);
+    // Start with a candidate from hardware RNG
+    unsigned int candidate = (random_seed % (N - 1)) + 1;  // Range [1, N-1]
 
-    // Generate random number between 1 and scanFileNum
-    index = rand() % scanFileNum + 1;
+    // Simple algorithm: find a coprime by checking small primes
+    // For most N, start with small primes which are likely coprime
+    unsigned int primes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47};
+    unsigned int num_primes = sizeof(primes) / sizeof(primes[0]);
 
-    printf("Random index selected: %d (from seed: %lu)\r\n", index, random_seed);
+    for (unsigned int j = 0; j < num_primes; j++)
+    {
+        unsigned int test = primes[j];
+        if (test >= N)
+            continue;
+
+        // Check if test is coprime with N using Euclidean algorithm
+        unsigned int a = N, b = test;
+        while (b != 0)
+        {
+            unsigned int temp = b;
+            b = a % b;
+            a = temp;
+        }
+
+        if (a == 1)  // gcd(N, test) == 1 means coprime
+        {
+            printf("findCoprime(%u): found %u\r\n", N, test);
+            return test;
+        }
+    }
+
+    // Fallback: linear search if no small prime works
+    for (unsigned int a = 2; a < N; a++)
+    {
+        unsigned int x = N, y = a;
+        while (y != 0)
+        {
+            unsigned int temp = y;
+            y = x % y;
+            x = temp;
+        }
+        if (x == 1)
+        {
+            printf("findCoprime(%u): found %u (linear search)\r\n", N, a);
+            return a;
+        }
+    }
+
+    // Should never reach here if N > 1
+    printf("findCoprime: fallback to 1 for N=%u\r\n", N);
+    return 1;
+}
+
+/* 
+    function: 
+        Get the next index from affine permutation (a*i + b) mod N
+    parameter: 
+        state: Pointer to CycleState
+    return:
+        The permuted index value (0-based)
+*/
+unsigned int getAffinePermutationIndex(CycleState *state)
+{
+    if (state->N == 0)
+        return 0;
+
+    // Compute (a * i + b) mod N
+    unsigned int index = ((state->a * state->i) + state->b) % state->N;
+
+    // Increment iteration counter
+    state->i++;
+    if (state->i >= state->N)
+    {
+        state->i = 0;  // Cycle complete, reset for next cycle
+    }
+
     return index;
+}
+
+/*
+    function:
+        Load cycle state from state.txt
+    parameter:
+        state: Pointer to CycleState to fill
+    return:
+        0: Success
+        1: File not found or error
+*/
+char loadCycleState(CycleState *state)
+{
+    // Initialize with safe defaults
+    state->crc = 0;
+    state->N = 0;
+    state->i = 0;
+    state->a = 1;
+    state->b = 0;
+
+    // Don't mount here - caller should handle mounting
+    FRESULT fr;
+    FIL fil;
+    FILINFO fno;
+
+    // Check if state file exists
+    fr = f_stat("state.txt", &fno);
+    if (fr != FR_OK)
+    {
+        printf("Cycle state file not found\r\n");
+        return 1;
+    }
+
+    fr = f_open(&fil, "state.txt", FA_READ);
+    if (FR_OK != fr)
+    {
+        printf("Failed to open state file: %s (%d)\r\n", FRESULT_str(fr), fr);
+        return 1;
+    }
+
+    char line[100];
+    // Read the single line: crc,N,i,a,b
+    if (f_gets(line, sizeof(line), &fil) != NULL)
+    {
+        // Remove newline characters
+        char *newline = strchr(line, '\r');
+        if (newline)
+            *newline = '\0';
+        newline = strchr(line, '\n');
+        if (newline)
+            *newline = '\0';
+
+        // Parse: crc,N,i,a,b
+        if (sscanf(line, "%lu,%u,%u,%u,%u", &state->crc, &state->N, &state->i, &state->a, &state->b) == 5)
+        {
+            printf("Loaded cycle state: crc=%lu, N=%u, i=%u, a=%u, b=%u\r\n",
+                   state->crc, state->N, state->i, state->a, state->b);
+            f_close(&fil);
+            return 0;
+        }
+        else
+        {
+            printf("Failed to parse state file\r\n");
+        }
+    }
+
+    f_close(&fil);
+    return 1;
+}
+
+/*
+    function:
+        Save cycle state to state.txt
+    parameter:
+        state: Pointer to CycleState to save
+    return:
+        none
+*/
+void saveCycleState(const CycleState *state)
+{
+    // Don't mount here - caller should handle mounting
+    FRESULT fr;
+    FIL fil;
+
+    fr = f_open(&fil, "state.txt", FA_CREATE_ALWAYS | FA_WRITE);
+    if (FR_OK != fr)
+    {
+        printf("Failed to create state file: %s (%d)\r\n", FRESULT_str(fr), fr);
+        return;
+    }
+
+    // Write in format: crc,N,i,a,b
+    f_printf(&fil, "%lu,%u,%u,%u,%u\r\n", state->crc, state->N, state->i, state->a, state->b);
+
+    // Ensure data is written to disk
+    f_sync(&fil);
+    f_close(&fil);
+
+    printf("Saved cycle state: crc=%lu, N=%u, i=%u, a=%u, b=%u\r\n",
+           state->crc, state->N, state->i, state->a, state->b);
+}
+
+/*
+    function:
+        Create a default cycle state with fresh affine parameters
+    parameter:
+        state: Pointer to CycleState to initialize
+        fileListCrc: CRC32 of fileList.txt
+        fileCount: Total number of files
+    return:
+        none
+*/
+void createDefaultCycleState(CycleState *state, unsigned long fileListCrc, unsigned int fileCount)
+{
+    state->crc = fileListCrc;
+    state->N = fileCount;
+    state->i = 0;
+
+    // Find a coprime multiplier
+    state->a = findCoprime(fileCount);
+
+    // Generate random offset from hardware RNG
+    unsigned long random_offset = 0;
+    volatile unsigned long *rnd_reg = (unsigned long *)(ROSC_BASE + ROSC_RANDOMBIT_OFFSET);
+
+    for (int i = 0; i < 16; i++)
+    {
+        for (int j = 0; j < 30; j++)
+        {
+            asm volatile("nop");
+        }
+        random_offset = (random_offset << 1) | (*rnd_reg & 1);
+    }
+
+    state->b = random_offset % fileCount;
+
+    printf("Created default cycle state: crc=%lu, N=%u, a=%u, b=%u\r\n",
+           state->crc, state->N, state->a, state->b);
+}
+
+/* 
+    function: 
+        Get next image index for Mode 3 (affine permutation-based randomization)
+    parameter: 
+        none
+    return:
+        Next image index (1-based)
+*/
+int getNextImageIndex(void)
+{
+    CycleState state;
+    int index = 1;
+
+    if (scanFileNum <= 1)
+    {
+        return index;  // If there's only one file or none, return 1
+    }
+
+    // Compute CRC32 of current fileList.txt
+    unsigned long current_crc = crc32_file(fileList);
+    printf("Current fileList.txt CRC32: %lu\r\n", current_crc);
+
+    // Try to load existing cycle state
+    char state_exists = (loadCycleState(&state) == 0);
+
+    if (!state_exists || state.crc != current_crc)
+    {
+        // File changed or state doesn't exist: create new state
+        if (!state_exists)
+        {
+            printf("Creating new cycle state (state.txt not found)\r\n");
+        }
+        else
+        {
+            printf("File list changed (CRC mismatch: stored=%lu, current=%lu). Reinitializing cycle.\r\n",
+                   state.crc, current_crc);
+        }
+        createDefaultCycleState(&state, current_crc, scanFileNum);
+    }
+    else if (state.N != scanFileNum)
+    {
+        // File count changed
+        printf("File count changed from %u to %d. Reinitializing cycle.\r\n", state.N, scanFileNum);
+        createDefaultCycleState(&state, current_crc, scanFileNum);
+    }
+
+    // Get next index from affine permutation (0-based)
+    unsigned int permuted_index = getAffinePermutationIndex(&state);
+
+    // Convert to 1-based indexing
+    index = permuted_index + 1;
+
+    // Save updated state
+    saveCycleState(&state);
+
+    printf("Generated permuted index: %d (0-based: %u, cycle position: %u/%u)\r\n",
+           index, permuted_index, state.i, state.N);
+
+    return index;
+}
+
+/* 
+    function: 
+        Get random image index for Mode 3 (DEPRECATED - use getNextImageIndex instead)
+    parameter: 
+        none
+    return:
+        Random image index
+*/
+int getRandomImageIndex(void)
+{
+    // Backward compatibility wrapper - calls new affine permutation-based function
+    return getNextImageIndex();
 }
 
 /* 

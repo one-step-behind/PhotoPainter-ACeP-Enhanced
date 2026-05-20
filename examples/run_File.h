@@ -3,6 +3,7 @@
 
 #include "DEV_Config.h"
 #include <stdbool.h> // For bool type
+#include <stdint.h>  // For uint32_t, size_t
 
 #define fileNumber 100
 #define fileLen 100
@@ -15,6 +16,16 @@ typedef struct
     int currentIndex; // Current image index
     int refreshCycles; // Refresh cycles the display had
 } Settings_t;
+
+// Cycle state structure for affine permutation (Mode 3 randomization)
+typedef struct
+{
+    unsigned long crc;  // CRC32 of fileList.txt at cycle start
+    unsigned int N;      // Total number of image files
+    unsigned int i;      // Iteration counter (0 to N-1)
+    unsigned int a;      // Multiplicative coefficient (coprime with N)
+    unsigned int b;      // Additive offset (0 to N-1)
+} CycleState;
 
 char sdTest(void);
 void sdInitTest(void);
@@ -32,8 +43,16 @@ void setFilePath(void);
 void updatePathIndex(void);
 void file_sort();
 
-// Get random image index for Mode 3
-int getRandomImageIndex(void);
+// CRC32 and affine permutation functions for Mode 3
+unsigned long crc32_file(const char *path);
+unsigned int findCoprime(unsigned int N);
+unsigned int getAffinePermutationIndex(CycleState *state);
+int getNextImageIndex(void);
+
+// Cycle state file functions
+char loadCycleState(CycleState *state);
+void saveCycleState(const CycleState *state);
+void createDefaultCycleState(CycleState *state, unsigned long fileListCrc, unsigned int fileCount);
 
 // Settings file functions
 char loadSettings(Settings_t *settings);
