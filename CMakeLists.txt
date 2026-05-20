@@ -17,6 +17,12 @@ set(PICO_BOARD pico CACHE STRING "Board type")
 cmake_minimum_required(VERSION 3.12)
 include(pico_sdk_import.cmake)
 project(Pico_ePaper_73)
+
+# Set output directories
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/target/runtime)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/target/library)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/target/archive)
+
 pico_sdk_init()
 
 # add a compilation subdirectory
@@ -37,15 +43,15 @@ include_directories(./lib/RTC)
 include_directories(./lib/led)
 
 # generate an executable file
-add_executable(epd
+add_executable(acep_enhanced
 main.c
 )
 
 # enable usb output, disable uart output
-pico_enable_stdio_usb(epd 1)
-pico_enable_stdio_uart(epd 0)
+pico_enable_stdio_usb(acep_enhanced 1)
+pico_enable_stdio_uart(acep_enhanced 0)
 
 # create map/bin/hex/uf2 file etc.
-pico_add_extra_outputs(epd)
+pico_add_extra_outputs(acep_enhanced)
 
-target_link_libraries(epd examples ePaper GUI led Fonts Config RTC FatFs_SPI)
+target_link_libraries(acep_enhanced examples ePaper GUI led Fonts Config RTC FatFs_SPI)
