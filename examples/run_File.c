@@ -624,7 +624,7 @@ int getRandomImageIndex(void)
 
     if (scanFileNum <= 1)
     {
-        return 1; // If there's only one file or none, return 1
+        return index; // If there's only one file or none, return initial value 1
     }
 
     // Use RP2040 hardware to generate better random numbers
