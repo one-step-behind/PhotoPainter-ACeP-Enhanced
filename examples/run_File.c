@@ -1008,7 +1008,7 @@ int compare_strings(const char *a, const char *b) {
         left: Sort starting point
         right: End of the order, notice minus one
 */
-void custom_qsort(char arr[fileNumber][fileLen], int left, int right) {
+void custom_qsort(char arr[][fileLen], int left, int right) {
     if (left >= right) {
         return;
     }
@@ -1296,7 +1296,7 @@ void file_sort()
     else
     {
         file_count1 = 0; 
-        custom_qsort(temp, 0, fileLen-1);
+        custom_qsort(temp, 0, scanFileNum1-1);
         file_copy1(temp, templist1);
         file_copy2(temp, templist2);
 
