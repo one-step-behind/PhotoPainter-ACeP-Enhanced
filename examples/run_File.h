@@ -5,7 +5,7 @@
 #include <stdbool.h> // For bool type
 #include <stdint.h>  // For uint32_t, size_t
 
-#define fileNumber 100
+#define fileNumber 10000
 #define fileLen 100
 
 // Settings structure

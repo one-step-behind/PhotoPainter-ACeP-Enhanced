@@ -1068,7 +1068,7 @@ void custom_qsort(char arr[][fileLen], int left, int right) {
     function: 
         Array copy and sort
 */
-void file_copy(char temp[fileNumber][fileLen], char templist[fileNumber/2][fileLen], char templistnew[fileNumber/2][fileLen], char count)
+void file_copy(char temp[fileNumber][fileLen], char templist[fileNumber/2][fileLen], char templistnew[fileNumber/2][fileLen], int count)
 {
     memcpy(temp, templist, fileNumber/2*fileLen);
     memcpy(temp[fileNumber/2], templistnew, count*fileLen);
@@ -1101,14 +1101,14 @@ void file_copy2(char temp[fileNumber][fileLen], char templist[fileNumber/2][file
     return: 
         Returns the number of arrays written
 */
-char file_gets(char temp[][fileLen], char count, FIL* fil)
+int file_gets(char temp[][fileLen], int count, FIL* fil)
 {
-    for(char i=0; i<count; i++)
+    for(int i=0; i<count; i++)
     {
         strcpy(temp[i], "");
     }
 
-    char i=0;
+    int i=0;
     for(i=0; i<count; i++)
     {
         if(f_gets(temp[i], 999, fil) == NULL) 
@@ -1131,16 +1131,16 @@ char file_gets(char temp[][fileLen], char count, FIL* fil)
     return: 
         Returns the number of arrays written
 */
-char file_temporary_gets(char temp[][fileLen], const char *path)
+int file_temporary_gets(char temp[][fileLen], const char *path)
 {
-    for(char i=0; i<50; i++)
+    for(int i=0; i<50; i++)
     {
         strcpy(temp[i], "");
     }
 
     FRESULT fr; /* Return value */
     FIL fil;
-    char i=0;
+    int i=0;
 
     fr =  f_open(&fil, path, FA_READ);
     if(FR_OK != fr && FR_EXIST != fr) {
@@ -1170,7 +1170,7 @@ char file_temporary_gets(char temp[][fileLen], const char *path)
         count: Number of writes
         path: Temporary file name
 */
-void file_temporary_puts(char temp[][fileLen], char count, const char *path)
+void file_temporary_puts(char temp[][fileLen], int count, const char *path)
 {
     FRESULT fr; /* Return value */
     FIL fil;
@@ -1178,7 +1178,7 @@ void file_temporary_puts(char temp[][fileLen], char count, const char *path)
     if(FR_OK != fr && FR_EXIST != fr)
         panic("f_open(%s) error: %s (%d) \n", path, FRESULT_str(fr), fr);
 
-    for(char i=0; i<count; i++)
+    for(int i=0; i<count; i++)
         f_puts(temp[i], &fil);
 
     f_close(&fil);
@@ -1192,9 +1192,9 @@ void file_temporary_puts(char temp[][fileLen], char count, const char *path)
         count: Number of writes
         fil: File pointer
 */
-void file_puts(char temp[][fileLen], char count, FIL* fil)
+void file_puts(char temp[][fileLen], int count, FIL* fil)
 {
-    for(char i=0; i<count; i++)
+    for(int i=0; i<count; i++)
         f_puts(temp[i], fil);
 }
 
@@ -1286,7 +1286,7 @@ void file_sort()
     int scanFileNum1=0;
     int scanFileNum2=0;
     int js=0;
-    for(char i=0; i<fileNumber; i++)
+    for(int i=0; i<fileNumber; i++)
     {
         if(f_gets(temp[i], 999, &fil) == NULL) 
         {
