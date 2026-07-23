@@ -4,7 +4,7 @@
 
 This project adapts [@myevit](https://github.com/myevit/)'s [PhotoPainter_B](https://github.com/myevit/PhotoPainter_B) firmware (originally designed for the Spectra6 6-color e-paper display) to work with the ACeP version (7-color) of the Waveshare PhotoPainter.
 
-The new version of **Mode 3** implements *affine permutation-based randomization*, ensuring each image appears exactly once per cycle, eliminating the duplicate selections that occurred with the previous random approach.
+The new version of **Mode 3** implements *Fisher-Yates shuffle-based randomization*, generating truly random image sequences where each image appears exactly once per cycle. Each new cycle generates a completely different random order.
 
 ## Settings File Format (`settings.txt`)
 
@@ -24,16 +24,18 @@ For **additional information** about features, operation modes and settings plea
 
 ## State file format (`state.txt`)
 
-The state.txt file stores the actual permutation. The format consists of:
+The state.txt file stores the current shuffled permutation. The format consists of two lines:
 
+**Line 1:** Metadata
 - CRC32 of fileList.txt
-- Total number of image files / line count of fileList.txt
-- Iteration counter
-- Multiplicative coefficient (coprime with N)
-- Additive offset
+- Total number of image files
+- Current position in shuffle
+
+**Line 2:** Comma-separated shuffled indices (0 to N-1)
 
 ```txt
-1733624837,161,4,3,87
+1733624837,161,4
+0,5,2,8,1,3,7,4,6,9,...
 ```
 
 ## Image conversion
@@ -52,7 +54,7 @@ A USB flash drive will pop up on the computer and you can drag the pre-compiled 
 
 ## Recent Updates
 
-- Replaced random index generation with affine permutation for Mode 3 and add CRC32 functionality
+- Implemented Fisher-Yates shuffle for Mode 3, generating truly random image sequences with automatic re-shuffling each cycle
 
 ## License
 

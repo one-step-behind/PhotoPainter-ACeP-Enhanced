@@ -17,14 +17,13 @@ typedef struct
     int refreshCycles; // Refresh cycles the display had
 } Settings_t;
 
-// Cycle state structure for affine permutation (Mode 3 randomization)
+// Cycle state structure for Fisher-Yates shuffle (Mode 3 randomization)
 typedef struct
 {
     unsigned long crc;  // CRC32 of fileList.txt at cycle start
     unsigned int N;      // Total number of image files
-    unsigned int i;      // Iteration counter (0 to N-1)
-    unsigned int a;      // Multiplicative coefficient (coprime with N)
-    unsigned int b;      // Additive offset (0 to N-1)
+    unsigned int i;      // Current position in shuffled array
+    unsigned int shuffled_array[fileNumber];  // Shuffled permutation of indices
 } CycleState;
 
 char sdTest(void);
@@ -43,10 +42,11 @@ void setFilePath(void);
 void updatePathIndex(void);
 void file_sort();
 
-// CRC32 and affine permutation functions for Mode 3
+// CRC32 and Fisher-Yates shuffle functions for Mode 3
 unsigned long crc32_file(const char *path);
-unsigned int findCoprime(unsigned int N);
-unsigned int getAffinePermutationIndex(CycleState *state);
+uint32_t getHardwareRandom32(void);
+void fisherYatesShuffle(unsigned int *array, unsigned int N);
+unsigned int getShuffledIndex(CycleState *state);
 int getNextImageIndex(void);
 
 // Cycle state file functions

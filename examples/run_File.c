@@ -648,107 +648,79 @@ unsigned long crc32_file(const char *path)
 
 /* 
     function: 
-        Find a coprime of N (a number coprime with N for use in affine permutation)
+        Generate a random 32-bit number using RP2040 hardware RNG
     parameter: 
-        N: The modulus
+        none
     return:
-        A value coprime with N
+        32-bit random value
 */
-unsigned int findCoprime(unsigned int N)
+uint32_t getHardwareRandom32(void)
 {
-    if (N <= 1)
-        return 1;
-
-    // Use RP2040 hardware to generate initial candidate
-    unsigned long random_seed = 0;
+    uint32_t random_value = 0;
     volatile uint32_t *rnd_reg = (uint32_t *)(ROSC_BASE + ROSC_RANDOMBIT_OFFSET);
 
-    // Get 16 random bits
-    for (int i = 0; i < 16; i++)
+    // Get 32 random bits
+    for (int i = 0; i < 32; i++)
     {
-        // Wait a bit
+        // Wait a bit for stable output
         for (int j = 0; j < 30; j++)
         {
             asm volatile("nop");
         }
-        // Get one random bit
-        random_seed = (random_seed << 1) | (*rnd_reg & 1);
+        // Get one random bit and shift it in
+        random_value = (random_value << 1) | (*rnd_reg & 1);
     }
 
-    // Start with a candidate from hardware RNG
-    unsigned int candidate = (random_seed % (N - 1)) + 1;  // Range [1, N-1]
-
-    // Simple algorithm: find a coprime by checking small primes
-    // For most N, start with small primes which are likely coprime
-    unsigned int primes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47};
-    unsigned int num_primes = sizeof(primes) / sizeof(primes[0]);
-
-    for (unsigned int j = 0; j < num_primes; j++)
-    {
-        unsigned int test = primes[j];
-        if (test >= N)
-            continue;
-
-        // Check if test is coprime with N using Euclidean algorithm
-        unsigned int a = N, b = test;
-        while (b != 0)
-        {
-            unsigned int temp = b;
-            b = a % b;
-            a = temp;
-        }
-
-        if (a == 1)  // gcd(N, test) == 1 means coprime
-        {
-            printf("findCoprime(%u): found %u\r\n", N, test);
-            return test;
-        }
-    }
-
-    // Fallback: linear search if no small prime works
-    for (unsigned int a = 2; a < N; a++)
-    {
-        unsigned int x = N, y = a;
-        while (y != 0)
-        {
-            unsigned int temp = y;
-            y = x % y;
-            x = temp;
-        }
-        if (x == 1)
-        {
-            printf("findCoprime(%u): found %u (linear search)\r\n", N, a);
-            return a;
-        }
-    }
-
-    // Should never reach here if N > 1
-    printf("findCoprime: fallback to 1 for N=%u\r\n", N);
-    return 1;
+    return random_value;
 }
 
 /* 
     function: 
-        Get the next index from affine permutation (a*i + b) mod N
+        Fisher-Yates shuffle to generate random permutation
+    parameter: 
+        array: Array of indices to shuffle (0 to N-1)
+        N: Number of elements
+    return:
+        none (shuffles in place)
+*/
+void fisherYatesShuffle(unsigned int *array, unsigned int N)
+{
+    if (N <= 1)
+        return;
+
+    for (unsigned int i = N - 1; i > 0; i--)
+    {
+        // Generate random index from 0 to i (inclusive)
+        uint32_t random = getHardwareRandom32();
+        unsigned int j = random % (i + 1);
+
+        // Swap array[i] and array[j]
+        unsigned int temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+
+    printf("Fisher-Yates shuffle complete for %u elements\r\n", N);
+}
+
+/* 
+    function: 
+        Get the next index from the shuffled permutation
     parameter: 
         state: Pointer to CycleState
     return:
-        The permuted index value (0-based)
+        The next shuffled index value (0-based)
 */
-unsigned int getAffinePermutationIndex(CycleState *state)
+unsigned int getShuffledIndex(CycleState *state)
 {
-    if (state->N == 0)
+    if (state->N == 0 || state->i >= state->N)
         return 0;
 
-    // Compute (a * i + b) mod N
-    unsigned int index = ((state->a * state->i) + state->b) % state->N;
+    // Return the pre-shuffled index at current position
+    unsigned int index = state->shuffled_array[state->i];
 
     // Increment iteration counter
     state->i++;
-    if (state->i >= state->N)
-    {
-        state->i = 0;  // Cycle complete, reset for next cycle
-    }
 
     return index;
 }
@@ -768,8 +740,6 @@ char loadCycleState(CycleState *state)
     state->crc = 0;
     state->N = 0;
     state->i = 0;
-    state->a = 1;
-    state->b = 0;
 
     // Don't mount here - caller should handle mounting
     FRESULT fr;
@@ -791,8 +761,9 @@ char loadCycleState(CycleState *state)
         return 1;
     }
 
-    char line[100];
-    // Read the single line: crc,N,i,a,b
+    char line[2000];  // Larger buffer for shuffled sequence
+    
+    // Read first line: crc,N,i
     if (f_gets(line, sizeof(line), &fil) != NULL)
     {
         // Remove newline characters
@@ -803,18 +774,64 @@ char loadCycleState(CycleState *state)
         if (newline)
             *newline = '\0';
 
-        // Parse: crc,N,i,a,b
-        if (sscanf(line, "%lu,%u,%u,%u,%u", &state->crc, &state->N, &state->i, &state->a, &state->b) == 5)
+        // Parse: crc,N,i
+        if (sscanf(line, "%lu,%u,%u", &state->crc, &state->N, &state->i) == 3)
         {
-            printf("Loaded cycle state: crc=%lu, N=%u, i=%u, a=%u, b=%u\r\n",
-                   state->crc, state->N, state->i, state->a, state->b);
+            printf("Loaded cycle metadata: crc=%lu, N=%u, position=%u\r\n",
+                   state->crc, state->N, state->i);
+        }
+        else
+        {
+            printf("Failed to parse state file metadata\r\n");
+            f_close(&fil);
+            return 1;
+        }
+    }
+    else
+    {
+        printf("Failed to read metadata line from state file\r\n");
+        f_close(&fil);
+        return 1;
+    }
+
+    // Read second line: shuffled sequence (comma-separated)
+    if (f_gets(line, sizeof(line), &fil) != NULL)
+    {
+        // Remove newline characters
+        char *newline = strchr(line, '\r');
+        if (newline)
+            *newline = '\0';
+        newline = strchr(line, '\n');
+        if (newline)
+            *newline = '\0';
+
+        // Parse comma-separated indices
+        char *token = strtok(line, ",");
+        unsigned int idx = 0;
+        while (token != NULL && idx < state->N)
+        {
+            unsigned int val;
+            if (sscanf(token, "%u", &val) == 1)
+            {
+                state->shuffled_array[idx++] = val;
+            }
+            token = strtok(NULL, ",");
+        }
+
+        if (idx == state->N)
+        {
+            printf("Loaded shuffled sequence with %u indices\r\n", state->N);
             f_close(&fil);
             return 0;
         }
         else
         {
-            printf("Failed to parse state file\r\n");
+            printf("Failed to parse all shuffled indices (got %u, expected %u)\r\n", idx, state->N);
         }
+    }
+    else
+    {
+        printf("Failed to read shuffled sequence from state file\r\n");
     }
 
     f_close(&fil);
@@ -842,20 +859,29 @@ void saveCycleState(const CycleState *state)
         return;
     }
 
-    // Write in format: crc,N,i,a,b
-    f_printf(&fil, "%lu,%u,%u,%u,%u\r\n", state->crc, state->N, state->i, state->a, state->b);
+    // Write first line: metadata crc,N,i
+    f_printf(&fil, "%lu,%u,%u\r\n", state->crc, state->N, state->i);
+
+    // Write second line: shuffled sequence (comma-separated)
+    for (unsigned int idx = 0; idx < state->N; idx++)
+    {
+        if (idx > 0)
+            f_printf(&fil, ",");
+        f_printf(&fil, "%u", state->shuffled_array[idx]);
+    }
+    f_printf(&fil, "\r\n");
 
     // Ensure data is written to disk
     f_sync(&fil);
     f_close(&fil);
 
-    printf("Saved cycle state: crc=%lu, N=%u, i=%u, a=%u, b=%u\r\n",
-           state->crc, state->N, state->i, state->a, state->b);
+    printf("Saved cycle state: crc=%lu, N=%u, position=%u\r\n",
+           state->crc, state->N, state->i);
 }
 
 /*
     function:
-        Create a default cycle state with fresh affine parameters
+        Create a default cycle state with a new random shuffled permutation
     parameter:
         state: Pointer to CycleState to initialize
         fileListCrc: CRC32 of fileList.txt
@@ -869,31 +895,22 @@ void createDefaultCycleState(CycleState *state, unsigned long fileListCrc, unsig
     state->N = fileCount;
     state->i = 0;
 
-    // Find a coprime multiplier
-    state->a = findCoprime(fileCount);
-
-    // Generate random offset from hardware RNG
-    unsigned long random_offset = 0;
-    volatile unsigned long *rnd_reg = (unsigned long *)(ROSC_BASE + ROSC_RANDOMBIT_OFFSET);
-
-    for (int i = 0; i < 16; i++)
+    // Initialize array with indices 0 to N-1
+    for (unsigned int idx = 0; idx < fileCount; idx++)
     {
-        for (int j = 0; j < 30; j++)
-        {
-            asm volatile("nop");
-        }
-        random_offset = (random_offset << 1) | (*rnd_reg & 1);
+        state->shuffled_array[idx] = idx;
     }
 
-    state->b = random_offset % fileCount;
+    // Apply Fisher-Yates shuffle to randomize the array
+    fisherYatesShuffle(state->shuffled_array, fileCount);
 
-    printf("Created default cycle state: crc=%lu, N=%u, a=%u, b=%u\r\n",
-           state->crc, state->N, state->a, state->b);
+    printf("Created new shuffled cycle: crc=%lu, N=%u, starting with random permutation\r\n",
+           state->crc, state->N);
 }
 
 /* 
     function: 
-        Get next image index for Mode 3 (affine permutation-based randomization)
+        Get next image index for Mode 3 (Fisher-Yates shuffle-based randomization)
     parameter: 
         none
     return:
@@ -921,11 +938,11 @@ int getNextImageIndex(void)
         // File changed or state doesn't exist: create new state
         if (!state_exists)
         {
-            printf("Creating new cycle state (state.txt not found)\r\n");
+            printf("Creating new shuffled cycle (state.txt not found)\r\n");
         }
         else
         {
-            printf("File list changed (CRC mismatch: stored=%lu, current=%lu). Reinitializing cycle.\r\n",
+            printf("File list changed (CRC mismatch: stored=%lu, current=%lu). Generating new shuffle.\r\n",
                    state.crc, current_crc);
         }
         createDefaultCycleState(&state, current_crc, scanFileNum);
@@ -933,21 +950,27 @@ int getNextImageIndex(void)
     else if (state.N != scanFileNum)
     {
         // File count changed
-        printf("File count changed from %u to %d. Reinitializing cycle.\r\n", state.N, scanFileNum);
+        printf("File count changed from %u to %d. Generating new shuffle.\r\n", state.N, scanFileNum);
+        createDefaultCycleState(&state, current_crc, scanFileNum);
+    }
+    else if (state.i >= state.N)
+    {
+        // Cycle complete: generate a new shuffled permutation for next cycle
+        printf("Cycle complete (%u/%u). Generating new random permutation...\r\n", state.i, state.N);
         createDefaultCycleState(&state, current_crc, scanFileNum);
     }
 
-    // Get next index from affine permutation (0-based)
-    unsigned int permuted_index = getAffinePermutationIndex(&state);
+    // Get next index from shuffled array (0-based)
+    unsigned int shuffled_index = getShuffledIndex(&state);
 
     // Convert to 1-based indexing
-    index = permuted_index + 1;
+    index = shuffled_index + 1;
 
     // Save updated state
     saveCycleState(&state);
 
-    printf("Generated permuted index: %d (0-based: %u, cycle position: %u/%u)\r\n",
-           index, permuted_index, state.i, state.N);
+    printf("Generated shuffled index: %d (0-based: %u, cycle position: %u/%u)\r\n",
+           index, shuffled_index, state.i, state.N);
 
     return index;
 }
